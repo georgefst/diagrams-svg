@@ -13,7 +13,6 @@
 {-# LANGUAGE OverloadedStrings          #-}
 {-# LANGUAGE ScopedTypeVariables        #-}
 {-# LANGUAGE StandaloneDeriving         #-}
-{-# LANGUAGE TemplateHaskell            #-}
 {-# LANGUAGE TypeFamilies               #-}
 {-# LANGUAGE TypeSynonymInstances       #-}
 
@@ -174,7 +173,12 @@ data Environment n = Environment
   , __pre  :: T.Text
   }
 
-makeLenses ''Environment
+{-# INLINE _pre #-}
+_pre :: Lens' (Environment a) T.Text
+_pre f (Environment s p) = f p <&> Environment s
+{-# INLINE style #-}
+style :: Lens (Environment a) (Environment b) (Style V2 a) (Style V2 b)
+style f (Environment s p) = f s <&> flip Environment p
 
 data SvgRenderState = SvgRenderState
   { _clipPathId :: Int
@@ -182,7 +186,15 @@ data SvgRenderState = SvgRenderState
   , _lineGradId :: Int
   }
 
-makeLenses ''SvgRenderState
+{-# INLINE clipPathId #-}
+clipPathId :: Lens' SvgRenderState Int
+clipPathId f (SvgRenderState c g l) = f c <&> \c' -> SvgRenderState c' g l
+{-# INLINE fillGradId #-}
+fillGradId :: Lens' SvgRenderState Int
+fillGradId f (SvgRenderState c g l) = f g <&> \g' -> SvgRenderState c g' l
+{-# INLINE lineGradId #-}
+lineGradId :: Lens' SvgRenderState Int
+lineGradId f (SvgRenderState c g l) = f l <&> \l' -> SvgRenderState c g l'
 
 initialEnvironment :: SVGFloat n => T.Text -> Environment n
 initialEnvironment = Environment (mempty # recommendFillColor transparent)
