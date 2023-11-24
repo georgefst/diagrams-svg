@@ -157,10 +157,9 @@ instance Parseable PrettyOpt where
   parser = prettyOpt
 
 instance SVGFloat n => Mainable (QDiagram SVG V2 n Any) where
-    type MainOpts (QDiagram SVG V2 n Any) = (DiagramOpts, DiagramLoopOpts, PrettyOpt)
-    mainRender (opts, loopOpts, pretty) d = do
+    type MainOpts (QDiagram SVG V2 n Any) = (DiagramOpts, PrettyOpt)
+    mainRender (opts, pretty) d = do
         chooseRender opts pretty d
-        defaultLoopRender loopOpts
 
 chooseRender :: SVGFloat n => DiagramOpts -> PrettyOpt -> QDiagram SVG V2 n Any -> IO ()
 chooseRender opts pretty d =
