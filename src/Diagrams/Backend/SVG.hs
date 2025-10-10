@@ -108,6 +108,8 @@ module Diagrams.Backend.SVG
   , renderPretty
   , renderPretty'
   , loadImageSVG
+
+  , TransformableElement(TransformableElement), elementToDiagram
   ) where
 
 -- from JuicyPixels
@@ -193,6 +195,17 @@ initialSvgRenderState = SvgRenderState 0 0 1
 
 -- | Monad to keep track of environment and state when rendering an SVG.
 type SvgRenderM n = ReaderT (Environment n) (State SvgRenderState) Element
+
+-- just a temporary crutch to allow us to experiment downstream with how to use the transformation
+newtype TransformableElement = TransformableElement (Transformation V2 Double -> Element)
+type instance V TransformableElement = V2
+type instance N TransformableElement = Double
+instance Transformable TransformableElement where
+    transform t (TransformableElement e) = TransformableElement (e . (<> t))
+instance Renderable TransformableElement B where
+    render SVG (TransformableElement e) = R $ pure $ e mempty
+elementToDiagram :: TransformableElement -> Diagram B
+elementToDiagram e = mkQD (Prim e) mempty mempty mempty mempty
 
 runRenderM :: SVGFloat n => T.Text -> SvgRenderM n -> Element
 runRenderM o s = flip evalState initialSvgRenderState
