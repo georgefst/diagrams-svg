@@ -18,6 +18,14 @@
 {-# LANGUAGE TypeSynonymInstances       #-}
 
 {-# OPTIONS_GHC -fno-warn-orphans #-}
+{-# OPTIONS_GHC -fdefer-typed-holes #-}
+{-# LANGUAGE NamedFieldPuns #-}
+{-# OPTIONS_GHC -Wno-unrecognised-pragmas #-}
+{-# HLINT ignore "Avoid lambda" #-}
+{-# LANGUAGE TypeOperators #-}
+{-# HLINT ignore "Use newtype instead of data" #-}
+{-# LANGUAGE TypeApplications #-}
+{-# HLINT ignore "Move brackets to avoid $" #-}
 
 ----------------------------------------------------------------------------
 -- |
@@ -110,6 +118,11 @@ module Diagrams.Backend.SVG
   , loadImageSVG
 
   , elementToDiagram
+
+  , animate
+  , TransformAnimation (..)
+  , TransformAnimationType (..)
+  , TransformAnimationAttribute (..)
   ) where
 
 -- from JuicyPixels
@@ -161,6 +174,7 @@ import           Graphics.Svg             hiding ((<>))
 -- from this package
 import           Graphics.Rendering.SVG   (SVGFloat)
 import qualified Graphics.Rendering.SVG   as R
+import Data.Fixed (E3, showFixed)
 
 -- | @SVG@ is simply a token used to identify this rendering backend
 --   (to aid type inference).
@@ -355,9 +369,71 @@ attributedRender svg = do
   clippedSvg   <- renderSvgWithClipping preT svg sty
   lineGradDefs <- lineTextureDefs sty
   fillGradDefs <- fillTextureDefs sty
+  let (transOriginAttr, transElement) = case getAttr sty of
+        Nothing -> ([], mempty)
+        Just (TransformAnimationAttribute animations t) ->
+          -- TODO this seems to be slightly off for my working example, we need an extra `V2 -3.3 3.3` or thereabouts for small circles, tending to 0 for larger ones...
+          -- should experiment further with a simpler example
+          -- a simple example would be good anyway, to post in the PR thread as motivation
+          ( pure . makeAttribute "transform-origin" . (\(P (V2 x y)) -> showNum x <> " " <> showNum y) $ transform t 1
+          , flip foldMap animations $ \(TransformAnimation dur rep animation) -> animateTransform_ $
+              [ AttributeName_ <<- "transform"
+              , Additive_ <<- "sum"
+              , Dur_ <<- T.show dur <> "s"
+              , RepeatCount_ <<- maybe "indefinite" T.show rep
+              ] <> case animation of
+                ScaleAnimation values ->
+                  [ Type_ <<- "scale"
+                  -- TODO these fields are poorly documented on MDN and elsewhere - had to look at the spec
+                  -- in particular, `values` is barely mentioned anywhere
+                  -- despite being by far the most valuable
+                  , Values_ <<- T.intercalate ";" (map (\(V2 x y) -> showNum x <> "," <> showNum y) values)
+                  ]
+                TranslateAnimation values ->
+                  [ Type_ <<- "translate"
+                  , Values_ <<- T.intercalate ";" (map (\(V2 x y) -> showNum x <> "," <> showNum y) values)
+                  ]
+            )
   return $ do
     let gDefs = mappend fillGradDefs lineGradDefs
-    gDefs `mappend` g_ (R.renderStyles idFill idLine sty) clippedSvg
+    gDefs `mappend` g_ (transOriginAttr <> R.renderStyles idFill idLine sty) (transElement <> clippedSvg)
+  where
+    -- TODO how is `diagrams-svg` outputting other numbers?
+    showNum = T.pack . showFixed @E3 True . realToFrac
+
+-- TODO go through the spec to check that we capture everything: https://svgwg.org/specs/animations/#AnimateTransformElement
+-- TODO stronger types for fields - times, new enums etc.
+-- TODO record?
+-- TODO names...
+-- TODO add rotations and maybe skews
+-- actually, maybe we should just take a `T2 Double`?
+-- then also `<animateMotion>`, maybe with actual `diagrams` `Path`s
+-- (`<animate>` seems too ad hoc to be useful in the context of this library)
+data TransformAnimationAttribute = TransformAnimationAttribute
+  [TransformAnimation]
+  (Transformation V2 Double)
+data TransformAnimation = TransformAnimation
+  Int -- ^ duration (seconds)
+  (Maybe Double) -- ^ repeat count - `Nothing` to repeat indefinitely
+  TransformAnimationType
+data TransformAnimationType
+  = ScaleAnimation [V2 Double]
+  | TranslateAnimation [V2 Double]
+
+instance AttributeClass TransformAnimationAttribute
+type instance V TransformAnimationAttribute = V2
+type instance N TransformAnimationAttribute = Double
+instance Semigroup TransformAnimationAttribute where
+    -- TODO think about this - what to do with multiple transforms... might just work out fine when we do this properly
+    -- TransformAnimationAttribute () <> TransformAnimationAttribute () = TransformAnimationAttribute ()
+    TransformAnimationAttribute xs tx <> TransformAnimationAttribute ys ty =
+      TransformAnimationAttribute (xs <> ys) (tx <> ty)
+instance Transformable TransformAnimationAttribute where
+    transform t (TransformAnimationAttribute a t0) =
+      TransformAnimationAttribute a (t <> t0)
+
+animate :: (HasStyle d, V d ~ V2, N d ~ Double) => TransformAnimation -> d -> d
+animate a = applyTAttr $ TransformAnimationAttribute [a] mempty
 
 instance SVGFloat n => Renderable (Path V2 n) SVG where
   render _ = R . attributedRender . R.renderPath
