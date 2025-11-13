@@ -20,6 +20,8 @@
 
 {-# OPTIONS_GHC -fno-warn-orphans #-}
 
+{-# LANGUAGE TupleSections #-}
+
 ----------------------------------------------------------------------------
 -- |
 -- Module      :  Diagrams.Backend.SVG
@@ -114,6 +116,8 @@ module Diagrams.Backend.SVG
   , TransformAnimation (..)
   , TransformAnimationType (..)
   , TransformAnimationAttribute (..)
+
+  , main
   ) where
 
 -- from JuicyPixels
@@ -386,6 +390,7 @@ data TransformAnimation = TransformAnimation
 data TransformAnimationType
   = ScaleAnimation [V2 Double]
   | TranslateAnimation [V2 Double]
+  -- TODO apply the transformation to the angle?
   | RotateAnimation [(Angle Double, Maybe (P2 Double))]
 
 instance AttributeClass TransformAnimationAttribute
@@ -501,3 +506,55 @@ instance Hashable n => Hashable (Options SVG V2 n) where
 -- matching Eq instance.
 instance Eq Element where
   (==) = (==) `on` renderBS
+
+-- let f t = map (realToFrac @_ @(Fixed E3)) $ mapMaybe (Map.lookup t) $ take 100 $ takeEvery 50 $ runSolverDoublePendulum in (f Theta1, f Theta2)
+theta1s, theta2s :: [Angle Double]
+pendulamData@(theta1s, theta2s) = bimap (map (@@ rad)) (map (@@ rad)) ([0.010,0.015,0.023,0.032,0.045,0.063,0.086,0.119,0.164,0.228,0.317,0.442,0.616,0.847,1.134,1.456,1.794,2.142,2.489,2.817,3.114,3.364,3.548,3.644,3.633,3.519,3.331,3.117,2.933,2.825,2.812,2.892,3.045,3.247,3.478,3.724,3.975,4.229,4.480,4.728,4.969,5.204,5.432,5.657,5.877,6.079,6.251,6.390,6.503,6.598,6.681,6.761,6.841,6.927,7.024,7.137,7.273,7.441,7.654,7.927,8.277,8.706,9.178,9.633,10.038,10.382,10.666,10.897,11.080,11.215,11.295,11.307,11.233,11.056,10.779,10.447,10.114,9.810,9.540,9.297,9.073,8.855,8.635,8.407,8.168,7.920,7.675,7.461,7.316,7.260,7.295,7.411,7.599,7.850,8.161,8.522,8.916,9.328,9.744,10.148],[-0.021,-0.022,-0.027,-0.036,-0.051,-0.075,-0.111,-0.165,-0.243,-0.358,-0.521,-0.751,-1.062,-1.454,-1.900,-2.345,-2.701,-2.902,-2.939,-2.834,-2.612,-2.289,-1.872,-1.382,-0.876,-0.417,-0.021,0.352,0.757,1.219,1.714,2.182,2.586,2.925,3.208,3.444,3.635,3.775,3.853,3.857,3.774,3.596,3.323,2.977,2.595,2.215,1.863,1.563,1.326,1.151,1.030,0.950,0.904,0.882,0.875,0.874,0.867,0.837,0.753,0.569,0.225,-0.300,-0.898,-1.365,-1.599,-1.645,-1.573,-1.428,-1.233,-0.993,-0.701,-0.346,0.075,0.546,1.038,1.527,1.973,2.325,2.572,2.745,2.884,3.029,3.212,3.455,3.768,4.139,4.538,4.951,5.381,5.815,6.216,6.551,6.801,6.949,6.970,6.828,6.501,6.047,5.618,5.358])
+
+
+main = renderPretty "out.svg" (mkSizeSpec $ V2 (Just 1000) Nothing) $ drawPendulum 10
+
+drawPendulum duration =
+  withEnvelope (square 4 :: Diagram B) $
+    mconcat
+        [ fromVertices
+            [ 0
+            , p2 (0, -1)
+            ]
+            & strokeLine
+            & lc blue
+            & animate  (TransformAnimation duration Nothing $ RotateAnimation (
+                map (, Nothing) theta1s
+                  ))
+        , fromVertices
+            [ 0
+            , p2 (0, -1)
+            ]
+            & strokeLine
+            & lc green
+            -- TODO shouldn't we actually be rotating _then_ translating?
+            -- otherwise we're not rotating around the correct origin
+            -- EDIT: well actually, this does work (now that we're back to not using `reverse` with `foldMap`)
+            -- I guess maybe it's just the order in the actual SVG that threw me, and is opposite to what's intuitive
+            -- given that scaling is fine as long as it's before translation, this does all seem fine
+
+            -- there's a test suite we could put together here:
+            -- basically, transformations caused by animations should have the same effect as existing `diagrams` ones
+            -- we'd probably have to somehow rasterize then compare to within some kind of error bound...
+            & animate (TransformAnimation duration Nothing $ RotateAnimation (
+                map (, Nothing)
+                      theta2s
+                  ))
+            -- & animate (
+            --   TransformAnimation 3 Nothing $
+            --     ScaleAnimation [0.5,2,0.5]
+            -- )
+            & animate (
+              TransformAnimation duration Nothing $
+                TranslateAnimation $
+                  map (
+                    \t -> V2 (-sinA t) (-cosA t)
+                  )
+                  theta1s
+              )
+        ]
